@@ -60,37 +60,56 @@ void OpenCLConvolution2D(Matrix *input0, Matrix *input1, Matrix *result)
     // Create the compute kernel in the program we wish to run
     kernel = clCreateKernel(program, "convolution2D", &err);
     CHECK_ERR(err, "clCreateKernel");
-
+    
     //@@ Allocate GPU memory here
-
+        device_a = clCreateBuffer(context, CL_MEM_WRITE_ONLY, input0->shape[0] * input0->shape[1] * sizeof(float) * 3, NULL, &err);
+        device_b = clCreateBuffer(context, CL_MEM_WRITE_ONLY, input1->shape[0] * input1->shape[1] * sizeof(float), NULL, &err);
+        device_c = clCreateBuffer(context, CL_MEM_WRITE_ONLY, result->shape[0] * result->shape[1] * sizeof(float) * 3, NULL, &err);
+    
     //@@ Copy memory to the GPU here
+        err = clEnqueueWriteBuffer(queue, device_a, CL_TRUE, 0, input0->shape[0] * input0->shape[1] * sizeof(float) * 3, input0->data, 0, NULL, NULL);
+        err = clEnqueueWriteBuffer(queue, device_b, CL_TRUE, 0, input1->shape[0] * input1->shape[1] * sizeof(float), input1->data, 0, NULL, NULL);
 
     // Set the arguments to our compute kernel
-    // __global float * inputData, __global float * outputData, __constant float * maskData,
-    // int width, int height, int maskWidth,  int imageChannels
-    err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &device_a);
-    CHECK_ERR(err, "clSetKernelArg 0");
-    err |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &device_c);
-    CHECK_ERR(err, "clSetKernelArg 1");
-    err |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &device_b);
-    CHECK_ERR(err, "clSetKernelArg 2");
-    err |= clSetKernelArg(kernel, 3, sizeof(unsigned int), &input0->shape[1]);
-    CHECK_ERR(err, "clSetKernelArg 3");
-    err |= clSetKernelArg(kernel, 4, sizeof(unsigned int), &input0->shape[0]);
-    CHECK_ERR(err, "clSetKernelArg 4");
-    err |= clSetKernelArg(kernel, 5, sizeof(unsigned int), &input1->shape[0]);
-    CHECK_ERR(err, "clSetKernelArg 5");
-    int imageChannels = IMAGE_CHANNELS;
-    err |= clSetKernelArg(kernel, 6, sizeof(unsigned int), &imageChannels);
-    CHECK_ERR(err, "clSetKernelArg 6");
+        err = clSetKernelArg(kernel, 0, sizeof(cl_mem), &device_a);
+        CHECK_ERR(err, "clSetKernelArg 0");
+        err |= clSetKernelArg(kernel, 1, sizeof(cl_mem), &device_c);
+        CHECK_ERR(err, "clSetKernelArg 1");
+        err |= clSetKernelArg(kernel, 2, sizeof(cl_mem), &device_b);
+        CHECK_ERR(err, "clSetKernelArg 2");
+        err |= clSetKernelArg(kernel, 3, sizeof(unsigned int), &input0->shape[1]);
+        CHECK_ERR(err, "clSetKernelArg 3");
+        err |= clSetKernelArg(kernel, 4, sizeof(unsigned int), &input0->shape[0]);
+        CHECK_ERR(err, "clSetKernelArg 4");
+        err |= clSetKernelArg(kernel, 5, sizeof(unsigned int), &input1->shape[0]);
+        CHECK_ERR(err, "clSetKernelArg 5");
+        int imageChannels = IMAGE_CHANNELS;
+        err |= clSetKernelArg(kernel, 6, sizeof(unsigned int), &imageChannels);
+        CHECK_ERR(err, "clSetKernelArg 6");
 
     // @@ define local and global work sizes
+        size_t global_item_size[2], local_item_size[2];
+        local_item_size[0] = 1;global_item_size[0] = result->shape[0];
+        local_item_size[1] = 1;global_item_size[1] = result->shape[1];      
 
     //@@ Launch the GPU Kernel here
+        err = clEnqueueNDRangeKernel(queue, kernel, 2, NULL, global_item_size, local_item_size, 0, NULL, NULL);
+        CHECK_ERR(err, "clEnqueueNDRangeKernel");
+        clFinish(queue);
 
     //@@ Copy the GPU memory back to the CPU here
+        err = clEnqueueReadBuffer(queue, device_c, CL_TRUE, 0, (*result).shape[0] * (*result).shape[1] * sizeof(float) * 3, (*result).data, 0, NULL, NULL);
+        CHECK_ERR(err, "clEnqueueWriteBuffer device_c");
 
     //@@ Free the GPU memory here
+    clReleaseProgram(program);
+    clReleaseKernel(kernel);
+    clReleaseCommandQueue(queue);
+    clReleaseContext(context);
+    clReleaseMemObject(device_a);
+    clReleaseMemObject(device_b);
+    clReleaseMemObject(device_c);
+    free(kernel_source);
 }
 
 int main(int argc, char *argv[])
@@ -123,11 +142,12 @@ int main(int argc, char *argv[])
     int rows, cols;
     //@@ Update these values for the output rows and cols of the output
     //@@ Do not use the results from the answer image
+        rows = host_a.shape[0];cols = host_a.shape[1];
 
     // Allocate the memory for the target.
     host_c.shape[0] = rows;
     host_c.shape[1] = cols;
-    host_c.data = (float *)malloc(sizeof(float) * host_c.shape[0] * host_c.shape[1] * IMAGE_CHANNELS);
+    host_c.data = (float *)malloc(sizeof(float)*host_c.shape[0]*host_c.shape[1]*IMAGE_CHANNELS);
 
     OpenCLConvolution2D(&host_a, &host_b, &host_c);
 
